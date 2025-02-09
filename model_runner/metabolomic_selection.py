@@ -6,11 +6,14 @@ from pathlib import Path
 from joblib import Parallel, delayed
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.linear_model import BayesianRidge, Lasso, Ridge
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.kernel_ridge import KernelRidge
 from sklearn.svm import SVR
 from sklearn.linear_model import ElasticNet, Lasso
 from sklearn.neural_network import MLPRegressor
 from sklearn.cross_decomposition import PLSRegression
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from xgboost import XGBRegressor
 import warnings
@@ -19,12 +22,32 @@ from sklearn.model_selection import KFold, RepeatedKFold
 # 配置参数
 N_EXPERIMENTS = 10# 实验次数
 N_FOLDS = 10# 交叉验证折数
+# 相当于进行来N_EXPERIMENTS次实验，每次实验都会进行N_FOLDS次交叉验证 
+# 所以总的实验次数是N_EXPERIMENTS*N_FOLDS
 N_MODELS = 6# 模型数量
 N_TRAITS = 5
 N_METABOLITES = 68
 RESULTS_DIR = Path("./results/fig4/a.panel/")
 MODELS= {
-        "RandomForest": RandomForestRegressor(
+        "Bayes": BayesianRidge(
+            alpha_init=1.0,  # 初始化 alpha（权重先验的精度）
+            lambda_init=1.0,  # 初始化 lambda（噪声先验的精度）
+            alpha_1=1e-6,    # alpha 的超先验参数
+            alpha_2=1e-6,    # alpha 的超先验参数
+            lambda_1=1e-6,   # lambda 的超先验参数
+            lambda_2=1e-6    # lambda 的超先验参数
+        ),
+        "Lasso": Lasso(
+            alpha=0.1,       # 正则化强度
+            max_iter=1000    # 最大迭代次数
+        ),
+        "Ridge": Ridge(
+                alpha=1.0        # 正则化强度
+        ),
+        "Gaussian": GaussianProcessRegressor(),
+        "RKHS": KernelRidge(kernel='precomputed'),
+        "GradientBoosting": GradientBoostingRegressor(),
+        "RandomForest": RandomForestRegressor( 
             n_estimators=1000,  # 增加树的数量
             max_features='sqrt',  # 使用平方根特征数量
             max_depth=20,  # 限制树的最大深度
@@ -89,7 +112,7 @@ def train_model(model_name, X_train, y_train, X_test, y_test):
         # model = MODELS[model_name].set_params(**{
         #     'random_state': np.random.randint(1e4)  # 确保随机性控制
         # })
-        # print(f"Training {model_name}...")
+        print(f"Training {model_name}...")
         model.fit(X_train, y_train)
         pred = model.predict(X_test)
         if np.isnan(pred).any():
@@ -139,7 +162,8 @@ def run_experiment(experiment):
     data = load_data(experiment)
     results = {trait: [] for trait in range(N_TRAITS)}
     
-    # 安全生成交叉验证索引
+    # 把数据集分成k份(nfold次) 这里shuffle是随机分的
+    # 每次取其中一份作为测试集,其余k-1份作为训练集
     kfold = KFold(n_splits=N_FOLDS, shuffle=True, random_state=experiment)
     
     for trait in range(N_TRAITS):
@@ -147,7 +171,7 @@ def run_experiment(experiment):
         y = data.iloc[:, trait+1].values# 不同的标签
         # 安全并行执行
         fold_results = []
-        for fold, (train, test) in enumerate(kfold.split(X, y)):
+        for fold, (train, test) in enumerate(kfold.split(X, y)):# train和test是索引
             fold_start = time.time()
             # 并行执行train_model([model_name1, model_name2, ...]),因此batch_results返回了结果的list
             batch_results = Parallel(n_jobs=-1)(
@@ -170,7 +194,6 @@ def run_experiment(experiment):
             # logger.log(f"Finished fold {fold} in {time.time()-fold_start:.2f}s")
         
         # 结果整合
-        print(f"folad_results length: {len(fold_results)}")
         if fold_results:
             for res in fold_results:
                 '''for key,value in res.items():
@@ -195,13 +218,13 @@ def run_experiment(experiment):
 # 主执行流程
 if __name__ == "__main__":
     # 并行run_experiment([0,....,N_EXPERIMENTS-1]) 相当于是并行的for循环
+    # 每一个experiment都随机抽取了200个样本
     Parallel(n_jobs=-1)(delayed(run_experiment)(exp) for exp in range(N_EXPERIMENTS))
-    
     # 结果汇总分析
     final_results = {}
-    for exp in range(N_EXPERIMENTS):
+    for exp in range(N_EXPERIMENTS):# exp是实验次数
         exp_results = {}
-        for trait in range(N_TRAITS):# trait是回归的特征数
+        for trait in range(N_TRAITS):# trait是回归的标签的索引 
             df = pd.read_csv(RESULTS_DIR/run_id/f"experiment{exp}"/f"trait_{trait}_results.csv")
             exp_results[trait] = {
                 "mean_accuracy": df["accuracies"].mean(),
