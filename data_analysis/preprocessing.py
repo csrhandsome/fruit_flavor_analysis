@@ -8,16 +8,13 @@ import seaborn as sns
 # Initial Preprocessing
 ###
 
-# 加载必要的库
-# 确保已安装以下库：
-# pip install pandas scikit-learn matplotlib seaborn openpyxl
 
 ###
 # Tomato Data
 ###
-def preprocess_tomato_data():
+def preprocess_data(data_dir="data/supplemental_datasets/SD1_dataset_tomato.xlsx"):
     # 从 Excel 文件中读取数据
-    tom_og = pd.read_excel("data/supplemental_datasets/SD1_dataset_tomato.xlsx", sheet_name="SD1_Original_Data")
+    tom_og = pd.read_excel(data_dir, sheet_name="SD1_Original_Data")
 
     # 移除不需要的列
     tom_og = tom_og.drop(columns=["species", "panel number"])

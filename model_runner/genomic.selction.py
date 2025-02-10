@@ -1,6 +1,8 @@
 from sklearn.kernel_ridge import KernelRidge
 import numpy as np
-
+# 基因组选择(genomic_selction):
+# 使用SNP标记构建亲缘关系矩阵
+# 主要使用gBLUP模型
 def calculate_grm(genotype_matrix):
     """
     计算亲缘关系矩阵GRM。
